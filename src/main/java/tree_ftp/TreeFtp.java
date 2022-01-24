@@ -4,63 +4,131 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import displayers.Displayer;
+import displayers.StandardDisplayer;
+
+/*@author Le Guennec Yaakoub
+ *@version 1.3
+ *Permet de se connecter à un serveur ftp et d'en extraire l'arborescence des répertoires.
+ * 
+ */
 public class TreeFtp {
 
-	private Directory rootDirectory;
+	private String rootDirectory;
 	private FtpClient client;
 	private String serverName;
+	private Displayer displayer;
 	
+	/*
+	 * @param serverName L'adresse IP du server Ftp sur lequel se connecter (peut être un nom de domaine (résolution dns)
+	 */
 	public TreeFtp(String serverName) {
-		this.rootDirectory = new Directory("/");
+		this.rootDirectory = "/";
 		this.serverName = serverName;
 		this.client = new FtpClient(serverName);
+		this.displayer = new StandardDisplayer();
 		
 	}
 	
+	/*
+	 * Permet de s'authentifier à un server et d'y être connecté.
+	 * 
+	 * @param user Le nom d'utilisateur avec lequel se connecter au server
+	 * @param password Le mot de passe avec lequel se connecter au server
+	 */
 	public void connect(String user, String password) throws InterruptedException {
 		client.connect(user, password);
 	}
 	
+	/*
+	 * Permet de se connecter à un serveur avec une authentification anonyme
+	 */
 	public void connectAnonymously() throws InterruptedException {
 		client.connectAnonymously();
 	}
 	
-	public void closeClient() {
-		client.closeClient();
+	/*
+	 * Permet de proceder à l'exploration et l'affichage de l'arborescence des répertoires du server jusqu'à une profondeur maxDepth (-1 si on ne veut pas de limite)
+	 * @param maxDepth Profondeur maximal à laquelle on explore l'arborescence du serveur.(égale à -1 si on ne se limite pas)
+	 */
+	public void get(int maxDepth) throws IOException {
+		
+		getTree(rootDirectory, 1, maxDepth);
+	}
+		
+	/*Permet de proceder à l'exploration et l'affichage de l'arborescence des répertoires du server à partir du répertoire 'parentDirectory'.
+	 * @param parentDirectory Le répertoire à partir duquel l'exploration de l'arborescence se fait.
+	 * @param depth Indique la profondeur à laquelle le répertoire 'parentDirectory' se trouve.
+	 * @param maxDepth La profondeur maximal à partir de 'parentDirectory' à laquelle on peut acceder.
+	 * 
+	 */
+	protected void getTree(String parentDirectory, int depth, int maxDepth) throws IOException {
+		
+		if(maxDepth > 0 && depth > maxDepth)
+			return;
+		
+		client.setCurrentDirectory(parentDirectory);
+
+		List<String> content = client.list();
+		
+		List<String> subDirectories = new ArrayList<>(this.fromStringExtractDirectories(content));
+		List<String> files = new ArrayList<>(this.fromStringExtractFiles(content));
+		
+		displayer.addDirectory(parentDirectory, depth);
+		displayer.addFiles(files, depth+1);
+
+		if(!subDirectories.isEmpty() && subDirectories != null) {
+			// On ajoute tous les repéroires fils au repertoire parents
+			for(int i =0; i < subDirectories.size(); i++) {
+				
+				getTree(subDirectories.get(i), depth+1, maxDepth);
+				client.setAsParentDirectory();
+			}
+			
+			
+		}		
 	}
 	
-	protected List<Directory> fromStringExtractDirectories(String message) {
-		List<Directory> directories = new ArrayList<>();
-		
-		if (message.isBlank() || message == null) return null;
-		
-		String[] directoriesLines = message.split("\n");
-		
-		for(int i =0; i < directoriesLines.length; i++) {
-			if (directoriesLines[i].startsWith("d")) {
-				int delimit = directoriesLines[i].lastIndexOf(" ");
+	/*
+	 * Permet d'extraire les noms des répertoires à partir d'une réponse de la commande list
+	 * @param responses Liste d'informations des répertoires (droits, etc..)
+	 * @return La liste des noms de répertoires
+	 */
+	protected List<String> fromStringExtractDirectories(List<String> responses) {
+		List<String> directories = new ArrayList<>();
+
+		if (responses.isEmpty() || responses == null) return null;
+				
+		for(int i =0; i < responses.size(); i++) {
+			String directory = responses.get(i);
+			
+			if (directory.startsWith("d")) {
+				int delimit = directory.lastIndexOf(" ");
+				
 				if(delimit >= 0) {
-					String directoryName = directoriesLines[i].substring(delimit+1, directoriesLines[i].length());
-					System.out.println("On a extrait : " + directoryName);
-					directories.add(new Directory(directoryName));
+					String directoryName = directory.substring(delimit+1, directory.length());
+					directories.add(directoryName);
 				}
 			}
 			
 		}
-		
 		return directories;
 	}
-	
-	protected List<String> fromStringExtractFiles(String message) {
+
+	/*
+	 * Permet d'extraire les noms des fichiers à partir d'une réponse de la commande list
+	 * @param responses Liste d'informations des fichiers (droits, etc..)
+	 * @return La liste des noms de fichiers
+	 */
+	protected List<String> fromStringExtractFiles(List<String> responses) {
 		List<String> files = new ArrayList<>();
-		
-		String[] filesLines = message.split("\n");
-		
-		for(int i =0; i < filesLines.length; i++) {
-			if (filesLines[i].startsWith("-")) {
-				int delimit = filesLines[i].lastIndexOf(" ");
+				
+		for(int i =0; i < responses.size(); i++) {
+			String file = responses.get(i);
+			if (file.startsWith("-")) {
+				int delimit = file.lastIndexOf(" ");
 				if(delimit >= 0) {
-					String fileName = filesLines[i].substring(delimit+1, filesLines[i].length());
+					String fileName = file.substring(delimit+1, file.length());
 					files.add(fileName);
 				}
 			}
@@ -69,52 +137,20 @@ public class TreeFtp {
 		return files;
 	}
 	
-	public void get() throws IOException {
-		
-		doIt(rootDirectory);
-		this.displayTree(rootDirectory, 1);
-	}
-	
-	public Directory getRootDirectory() {
+	/*
+	 * @return Le répertoire parent absolue du serveur ftp.
+	 */
+	public String getRootDirectory() {
 		return rootDirectory;
 	}
 	
-	
-	
-	protected void doIt(Directory parentDirectory) throws IOException {
-		System.out.println("Traitement du dir " + parentDirectory.getName());
-		client.setCurrentDirectory(parentDirectory.getName());
-		String content = client.list("");
-		List<Directory> subDirectories = new ArrayList<>();
-		subDirectories.addAll(this.fromStringExtractDirectories(content));
-		
-		if(!subDirectories.isEmpty()) {
-		
-			for(int i =0; i < subDirectories.size(); i++) {
-				parentDirectory.addSubDirectory(subDirectories.get(i));
-				System.out.println("On a ajouté le dir :  " + subDirectories.get(i).getName());
-
-				doIt(subDirectories.get(i));
-			}
-		}
-		
-		
-	}
-	
-	public void displayTree(Directory dir, int degree) {
-		List<Directory> e = rootDirectory.getSubDirectories();
-		
-		System.out.println("---" + dir.getName());
-
-		for(int i=0; i < e.size(); i++) {
-			System.out.println("\t" + e.get(i).getName());
-			displayTree(e.get(i), degree++);
-
-		}
-		
+	/*
+	 * Ferme la connexion au serveur Ftp.
+	 */
+	public void closeClient() {
+		client.closeClient();
 	}
 	
 	
-	
-	
+
 }

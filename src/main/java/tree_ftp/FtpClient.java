@@ -5,8 +5,15 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.StringTokenizer;
 
+/*@author Le Guennec Yaakoub
+ *@version 1.3
+ *Permet de créer une instance de connexion à un serveur Ftp et de communiquer avec ce dernier.
+ * 
+ */
 public class FtpClient {
 
 	private Socket commande_socket;
@@ -17,20 +24,18 @@ public class FtpClient {
 	private BufferedReader data_buffReader;
 	private PrintWriter data_printer;
 	
-	byte[] commandeResponseCache;
-	byte[] dataResponseCache;
-	
-	private String serverInerAdress;
+
+	private String serverInetAdress;
 	private String user;
 	private String password;
 	
-	
+	/*
+	 * Crée une instance de connexion à un serveur ftp 
+	 * @param serverInetAdress L'adresse IP du server Ftp sur lequel se connecter (peut être un nom de domaine (résolution dns)
+	 */
 	FtpClient(String serverInetAdresse) {
 		
-		this.serverInerAdress = serverInetAdresse;
-		commandeResponseCache = new byte[1000];
-		dataResponseCache = new byte[1000];
-
+		this.serverInetAdress = serverInetAdresse;
 		
 		try {
 			this.commande_socket = new Socket(serverInetAdresse, 21);
@@ -39,63 +44,55 @@ public class FtpClient {
 			this.commande_buffReader = new BufferedReader(new InputStreamReader(commande_socket.getInputStream()));
 			
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 
 	}
 	
-	
+	/*
+	 * Permet de s'authentifier à un server et d'y être connecté.
+	 * 
+	 * @param user Le nom d'utilisateur avec lequel se connecter au server
+	 * @param password Le mot de passe avec lequel se connecter au server
+	 */
 	public void connect(String user, String password) throws InterruptedException {
 		String message;
 
 		try {
 			
 			message = this.getCommandResponse();
-			//System.out.println("message : " + message);
-
+			
 			this.sendCommand("USER " + user);
-
 			message = this.getCommandResponse();
-			//System.out.println("message : " + message);
 			
 			this.sendCommand("PASS " + password);
 			message = this.getCommandResponse();
-			//System.out.println("message : " + message);
-
-			/*this.sendCommand("PASV");
-			message = this.getCommandResponse();
-			System.out.println("message : " + message);
-
-
-			this.data_socket = this.getDataSocketFromString(message);
-			this.data_printer = new PrintWriter(data_socket.getOutputStream(), true);
-			this.data_buffReader = new BufferedReader(new InputStreamReader(data_socket.getInputStream()));*/
+			
+			System.out.println("Connected to server as " + user + " on " + this.serverInetAdress + "\n");
+			
 			
 		} catch (IOException e) {
 
-
-			/*if (!message.startsWith("227 ")) {
-			      throw new IOException("SimpleFTP could not request passive mode: "
-			          + message);
-			    }*/
-
-			/*this.data_socket = this.getDataSocketFromString(message);
-			this.data_printer = new PrintWriter(data_socket.getOutputStream(), true);
-			this.data_buffReader = new BufferedReader(new InputStreamReader(data_socket.getInputStream()));*/
-
+			e.printStackTrace();
 		}
 
 		
 		
 	}
 	
+	/*
+	 * Permet de se connecter à un serveur avec une authentification anonyme
+	 */
 	public void connectAnonymously() throws InterruptedException {
 		
 		this.connect("anonymous", "anonymous");
 		
 	}
 	
+	/*
+	 * Envoie la commande 'message' au server Ftp
+	 * @param message Commande à envoyer au server ftp
+	 */
 	public void sendCommand(String message) throws IOException {
 		if(commande_socket== null)  {
 		      throw new IOException("FTP Server is not connected.");
@@ -105,23 +102,47 @@ public class FtpClient {
 		}
 	}
 	
-	public  String getDataResponse() throws IOException {
-		int length = data_socket.getInputStream().read(dataResponseCache, 0, 1000); // autres cas ? exception
-		String responseStr = new String(dataResponseCache, 0, 1000);
-		resetCache(dataResponseCache);
+	/*
+	 * Permet de récuperer la réponse du server sur le canal de donnée.
+	 * @return Liste des données (par ligne) récupérées.
+	 */
+	public  List<String> getDataResponse() throws IOException {
+		
+		List<String> responses = new ArrayList<>();
+		String line = "";
+		
+		boolean continueExtract = true;
 
-		return responseStr;
+		do {
+			line = this.data_buffReader.readLine();
+			if(line != null) {
+				responses.add(line);
+			} else {
+				continueExtract = false;
+			}
+		}while(continueExtract);
+
+		return responses;
 	}
 	
+	/*
+	 * Permet de récuperer la réponse du server sur le canal de commande.
+	 * @return La réponse du server sur le canal de commande.
+	 */
 	public  String getCommandResponse() throws IOException {
-		int length = commande_socket.getInputStream().read(commandeResponseCache, 0, 1000); // autres cas ? exception
-		String responseStr = new String(commandeResponseCache, 0, 1000);
-		resetCache(commandeResponseCache);
-
+		String line = "";
+		String responseStr = "";
+		
+		line = this.commande_buffReader.readLine();
+		responseStr+=line;
+		
 		return responseStr;
 	}
 	
-	public String list(String entity) throws IOException {
+	/*
+	 * Permet de passer la communication avec le serveur en mode passif.
+	 */
+	public void passiveMode() throws IOException {
 		this.sendCommand("PASV");
 		String message = this.getCommandResponse();
 
@@ -129,18 +150,29 @@ public class FtpClient {
 		this.data_printer = new PrintWriter(data_socket.getOutputStream(), true);
 		this.data_buffReader = new BufferedReader(new InputStreamReader(data_socket.getInputStream()));
 		
-		
-		this.sendCommand("LIST " + entity);
-		
-		this.getCommandResponse();
-		this.getCommandResponse();
 
-		String response = this.getDataResponse();
-
-
-		return response;
 	}
 	
+	/*
+	 * Envoie la commande trivial LIST au server et de récuperer le contenu du répertoire courant.
+	 * @return La liste des dossiers et fichiers (avec leurs droits et autres informations).
+	 */
+	public List<String> list() throws IOException {
+		
+		this.passiveMode();
+		this.sendCommand("LIST");
+		
+		this.getCommandResponse();
+		this.getCommandResponse();
+
+		return this.getDataResponse();
+	}
+	
+	/*
+	 * Permet de se placer dans le sous-répertoire 'directoryName'
+	 * @param directoryName Le nom du sous-repertoire auquel on souhaite se déplacer.
+	 * @return La réponse du serveur à la requete.
+	 */
 	public String setCurrentDirectory(String directoryName) throws IOException {
 		this.sendCommand("CWD " + directoryName);
 
@@ -148,6 +180,10 @@ public class FtpClient {
 
 	}
 	
+	/*
+	 * Permet de récuperer le répertoire courant dans le serveur ftp.
+	 * @return Le répertoire courant.
+	 */
 	public String getCurrentDirectory() throws IOException {
 		this.sendCommand("PWD");
 
@@ -155,13 +191,21 @@ public class FtpClient {
 
 	}
 	
-	public static void resetCache(byte[] cache) {
-		for(int i=0; i < cache.length; i++)
-		{
-			cache[i] = 0;
-		}
+	/*
+	 * Permet de se placer dans le répertoire parent.
+	 * @return La réponse du serveur à la requete.
+	 */
+	public String setAsParentDirectory() throws IOException {
+		this.sendCommand("CDUP");
+
+		return this.getCommandResponse();
+
 	}
 	
+
+	/*
+	 * Ferme la connexion au serveur Ftp.
+	 */
 	public void closeClient()  {
 		try {
 			this.sendCommand("QUIT");
@@ -177,6 +221,11 @@ public class FtpClient {
 		
 	}
 	
+	/*
+	 * Permet de créer un socket à partir du message du server suite à la requete du passage en mode passif.
+	 * @param message Message de confirmation du serveur du passage en mode passif.
+	 * @return Un socket sur l'adresse Ip et le port indiqué par le serveur pour la communication en mode passif.
+	 */
 	public Socket getDataSocketFromString(String message) throws IOException {
 
 		String ip = null;
@@ -202,11 +251,5 @@ public class FtpClient {
 	    
 	    return new Socket(ip, port);
 	}
-	
-	
-	
-	
-	
-	
-	
+		
 }
