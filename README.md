@@ -15,7 +15,8 @@ Les parametres <NomUtilisateur> et <MotDePasse> sont optionnels et permette de s
 alors la commande TreeFtp se connectera en mode anonyme si cela est possible.
 
 Le dernier parametre <ProfondeurMax> est aussi un parametre optionnel de la commande et permet d'indiquer la profondeur 
-maximale à laquelle on souhaite explorer l'arborescence des répertoires du serveur.
+maximale à laquelle on souhaite explorer l'arborescence des répertoires du serveur. Si la profondeur n'est pas indiqué, la commande explorera
+toute l'arborescence du serveur (peut prendre un certain temps).
   
   
 
